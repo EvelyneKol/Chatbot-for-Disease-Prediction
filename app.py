@@ -27,10 +27,10 @@ def preprocess_symptoms(symptoms):
 normalized_symptoms = preprocess_symptoms(symptoms)
 
 # Initialize the embedding model
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding_model = SentenceTransformer('multi-qa-mpnet-base-dot-v1')
 
 # Load precomputed symptom embeddings
-symptom_embeddings = np.load('/content/drive/My Drive/thesis/symptom_embeddings.npy')
+symptom_embeddings = np.load('/content/drive/My Drive/thesis/symptom_embeddings_qa.npy')
 
 # Load the pre-trained MLP ML model
 ml_model = joblib.load("/content/drive/My Drive/thesis/knn.joblib")
@@ -54,10 +54,31 @@ def get_top_matched_symptoms(user_input, symptom_embeddings, symptoms, threshold
     return sorted_matches
 
 # Function to predict disease
-def predict_disease(matched_symptoms):
-    input_vector = [1 if symptom in matched_symptoms else 0 for symptom in symptoms]
-    input_df = pd.DataFrame([input_vector], columns=symptoms)
-    return ml_model.predict(input_df)[0]
+def predict_top_diseases(matched_symptoms, top_n=3):
+    """
+    Returns a list of (disease, probability) pairs.
+    Any disease whose probability is exactly 0.0 is skipped.
+    """
+    #  Build one-hot vector for the symptoms the user mentioned
+    x = [1 if s in matched_symptoms else 0 for s in symptoms]
+    x_df = pd.DataFrame([x], columns=symptoms)
+
+    #  Get probabilities from the trained KNN
+    probs = ml_model.predict_proba(x_df)[0]          # shape = (n_classes,)
+
+    #  Sort class indices by descending probability
+    sorted_idx = np.argsort(probs)[::-1]
+
+    #  Keep only non-zero probabilities, then take the first top_n
+    top_pairs = [
+        (ml_model.classes_[i], probs[i])
+        for i in sorted_idx
+        if probs[i] > 0
+    ][:top_n]
+
+    return top_pairs
+
+
 
 # Function to generate disease description
 def generate_disease_description(disease_name):
@@ -85,27 +106,50 @@ for message in st.session_state.chat_history:
 user_input = st.chat_input("Type your message here...")
 
 if user_input:
+    # Add user input to chat history
+    st.session_state.chat_history.append({"role": "user", "content": user_input})
+
     if "bye" in user_input.lower():
         bot_response = "Goodbye! Take care."
     else:
         intent = classify_intent(user_input)
-        if intent == 0:
-            matched_symptoms = get_top_matched_symptoms(user_input, symptom_embeddings, symptoms)
-            if matched_symptoms:
-                predicted_disease = predict_disease(matched_symptoms)
-                description = generate_disease_description(predicted_disease)
-                bot_response = f"You may have {predicted_disease}. {description}"
-            else:
-                bot_response = "No matching symptoms found. Please provide more details."
-        elif intent == 1:
-            bot_response = biomistral.invoke(user_input)
-        else:
-            bot_response = "I'm sorry, I can't assist with that. Can you try rephrasing?"
 
-    # Add user message to chat history
-    st.session_state.chat_history.append({"role": "user", "content": user_input})
-    # Add bot response to chat history
+        # labels
+        intent_labels = {0: "Symptom description", 1: "Medical question", 2: "Unrelated"}
+
+        if intent == 0:
+            matched_symptoms = get_top_matched_symptoms(user_input,
+                                                        symptom_embeddings, symptoms)
+
+            if matched_symptoms:
+                top3 = predict_top_diseases(matched_symptoms, top_n=3)
+
+                # Nice chat formatting
+                bullet_list = "\n".join(
+                    f"• **{d}** — {p:.0%} likelihood" for d, p in top3
+                )
+
+                short_desc  = generate_disease_description(top3[0][0])
+
+                bot_response = (
+                    "Based on what you told me, the most likely conditions are:\n"
+                    f"{bullet_list}\n\n{short_desc}\n\n"
+                    "*Always consult a healthcare professional for a formal diagnosis.*"
+                )
+            else:
+                bot_response = (
+                    "I couldn't match enough symptoms. "
+                    "Could you describe anything else you're experiencing?"
+                )
+
+        elif intent == 1:  # Medical question
+            bot_response = biomistral.invoke(user_input)
+        else:  # Irrelevant
+            bot_response = "I'm not sure how to help with that. Can you rephrase or ask something related to health?"
+
+    # bot response to chat history
     st.session_state.chat_history.append({"role": "assistant", "content": bot_response})
+
 
     # Display the latest user message
     with st.chat_message("user"):
