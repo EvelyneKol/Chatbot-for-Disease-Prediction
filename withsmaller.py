@@ -14,7 +14,7 @@ classifier_model = AutoModelForSequenceClassification.from_pretrained("evelynkol
 classifier_tokenizer = AutoTokenizer.from_pretrained("evelynkol/distilbert-classifier")
 
 # Load the dataset and store the symptoms
-data = pd.read_csv('Training.csv')
+data = pd.read_csv('Data/Training.csv')
 symptoms = data.drop(columns=['prognosis']).columns.tolist()
 
 def preprocess_symptoms(symptoms):
