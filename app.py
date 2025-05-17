@@ -1,4 +1,3 @@
-#%%writefile app.py
 import streamlit as st
 import os
 import pandas as pd
@@ -14,9 +13,6 @@ from langchain_ollama import OllamaLLM
 classifier_model = AutoModelForSequenceClassification.from_pretrained("evelynkol/distilbert-classifier")
 classifier_tokenizer = AutoTokenizer.from_pretrained("evelynkol/distilbert-classifier")
 
-# Set working directory to your Google Drive path
-os.chdir('/content/drive/My Drive/thesis/')
-
 # Load the dataset and store the symptoms
 data = pd.read_csv('Training.csv')
 symptoms = data.drop(columns=['prognosis']).columns.tolist()
@@ -30,13 +26,13 @@ normalized_symptoms = preprocess_symptoms(symptoms)
 embedding_model = SentenceTransformer('multi-qa-mpnet-base-dot-v1')
 
 # Load precomputed symptom embeddings
-symptom_embeddings = np.load('/content/drive/My Drive/thesis/symptom_embeddings_qa.npy')
+symptom_embeddings = np.load('symptom_embeddings_qa.npy')
 
 # Load the pre-trained MLP ML model
-ml_model = joblib.load("/content/drive/My Drive/thesis/knn.joblib")
+ml_model = joblib.load("knn.joblib")
 
 # Load the LLaMA model using OllamaLLM
-biomistral = OllamaLLM(model="cniongolo/biomistral:latest")
+biomistral = OllamaLLM(model="llama3.2:1b")
 
 # Function to classify intent using the intent classifier
 def classify_intent(user_input):
